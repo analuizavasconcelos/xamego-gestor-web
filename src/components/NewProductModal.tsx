@@ -1,6 +1,6 @@
 import { useState, useEffect, type FormEvent } from 'react'
 import { api } from '../api/client'
-import { X, Loader2, DollarSign, Package, Tag, Image as ImageIcon } from 'lucide-react'
+import { X, Loader2, Image as ImageIcon } from 'lucide-react'
 
 interface NewProductModalProps {
   isOpen: boolean

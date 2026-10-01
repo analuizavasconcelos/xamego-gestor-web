@@ -3,9 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import { api } from '../api/client'
 import { 
   User, 
-  Mail, 
   Lock, 
-  KeyRound, 
   CheckCircle2, 
   AlertCircle, 
   Loader2,
