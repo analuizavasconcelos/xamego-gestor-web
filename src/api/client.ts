@@ -1,9 +1,15 @@
 import axios from 'axios'
 
+const baseURL = import.meta.env.VITE_API_URL
+if (!baseURL && import.meta.env.PROD) {
+  console.error('VITE_API_URL não está definida neste build.')
+}
+
 export const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000/api',
+  baseURL: baseURL || 'http://localhost:8000/api',
   headers: {
     'Content-Type': 'application/json',
+    Accept: 'application/json',
   },
 })
 
