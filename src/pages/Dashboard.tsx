@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { useDashboard } from '../hooks/useDashboard'
-import { useCurrentUser } from '../hooks/useCurrentUser'
+import { useAuth } from '../context/AuthContext'
 import { useUpcomingAppointments } from '../hooks/useUpcomingAppointments'
 import MetricCard from '../components/MetricCard'
 import { Plus, TrendingUp, ShoppingBag, TriangleAlert, Layers, ChevronRight, Pizza, CalendarDays } from 'lucide-react'
@@ -22,9 +22,10 @@ function formatShortDate(dateString: string) {
 }
 
 export default function Dashboard() {
+  const { user } = useAuth()
   const { products, todayReport, loading } = useDashboard()
-  const { name } = useCurrentUser()
   const { appointments, loading: loadingAppointments } = useUpcomingAppointments()
+  
 
   if (loading) {
     return (
@@ -35,6 +36,7 @@ export default function Dashboard() {
     )
   }
 
+  const name = user?.name?.split(' ')[0] ?? ''
   const lowStockProducts = products.filter((p) => p.current_stock <= p.low_stock_threshold)
   const soldUnits = todayReport?.total_units_sold ?? 0
   const revenue = todayReport?.total_revenue ?? 0
