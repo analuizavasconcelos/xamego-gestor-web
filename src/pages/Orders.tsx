@@ -15,12 +15,17 @@ import {
   LayoutList,
   Trash2,
   X,
+  MapPin,
+  Wallet,
 } from 'lucide-react'
 
 interface Appointment {
   id: number
   client_name: string
   description: string
+  address: string | null
+  total_value: string | number
+  amount_paid: string | number
   date: string
   time: string
   status: 'pendente' | 'concluido'
@@ -38,11 +43,128 @@ function formatDate(dateString: string) {
   return `${day}/${month}/${year}`
 }
 
+function formatMoney(value: number) {
+  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+}
+
 const monthNames = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
   'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
 ]
 const weekDays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
+
+const moneyInputClass =
+  'w-full bg-cream/30 border border-cream-dark rounded-xl h-10 px-3 text-sm text-brown placeholder:text-brown-light/60 focus:outline-none focus:ring-2 focus:ring-terracotta'
+
+function PaymentControl({
+  a,
+  onChangePaid,
+}: {
+  a: Appointment
+  onChangePaid: (a: Appointment, newPaid: number) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [value, setValue] = useState('')
+
+  const total = Number(a.total_value) || 0
+  const paid = Number(a.amount_paid) || 0
+  if (total <= 0) return null
+
+  const remaining = Math.max(total - paid, 0)
+  const isFullyPaid = remaining <= 0
+  const percent = Math.min(100, Math.round((paid / total) * 100))
+
+  function save(amountNow: number) {
+    if (!amountNow || amountNow <= 0) return
+    onChangePaid(a, Math.min(paid + amountNow, total))
+    setValue('')
+    setOpen(false)
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between gap-2 text-xs">
+        <span className={`font-bold ${isFullyPaid ? 'text-sage' : 'text-amber-700'}`}>
+          {isFullyPaid ? 'Pago' : `Falta ${formatMoney(remaining)}`}
+        </span>
+        <span className="text-brown-light">
+          {formatMoney(paid)} de {formatMoney(total)}
+        </span>
+      </div>
+
+      <div className="h-1.5 w-full bg-cream rounded-full overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-all ${isFullyPaid ? 'bg-sage' : 'bg-amber-400'}`}
+          style={{ width: `${percent}%` }}
+        />
+      </div>
+
+      {!isFullyPaid && !open && (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="text-xs font-semibold text-terracotta hover:text-terracotta-dark flex items-center gap-1 transition"
+        >
+          <Wallet size={13} />
+          Registrar pagamento
+        </button>
+      )}
+
+      {!isFullyPaid && open && (
+        <div className="space-y-2 pt-1">
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              autoFocus
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              placeholder="Quanto recebeu? (R$)"
+              className="flex-1 bg-cream/30 border border-cream-dark rounded-xl h-9 px-3 text-sm text-brown focus:outline-none focus:ring-2 focus:ring-terracotta"
+            />
+            <button
+              type="button"
+              onClick={() => save(Number(value))}
+              className="bg-sage text-white text-xs font-bold px-3 h-9 rounded-xl hover:bg-sage/90 transition"
+            >
+              Salvar
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false)
+                setValue('')
+              }}
+              className="text-brown-light text-xs px-1 hover:text-brown transition"
+            >
+              Cancelar
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={() => save(remaining)}
+            className="text-xs font-semibold text-sage hover:underline"
+          >
+            Recebi o restante ({formatMoney(remaining)})
+          </button>
+        </div>
+      )}
+
+      {paid > 0 && !open && (
+        <button
+          type="button"
+          onClick={() => {
+            if (confirm('Zerar os pagamentos registrados deste pedido?')) onChangePaid(a, 0)
+          }}
+          className="block text-[10px] text-brown-light hover:text-brown transition"
+        >
+          Corrigir (zerar pagamentos)
+        </button>
+      )}
+    </div>
+  )
+}
 
 export default function Agendamentos() {
   const [view, setView] = useState<'list' | 'calendar'>('calendar')
@@ -53,9 +175,13 @@ export default function Agendamentos() {
 
   const [clientName, setClientName] = useState('')
   const [description, setDescription] = useState('')
+  const [address, setAddress] = useState('')
+  const [totalValue, setTotalValue] = useState('')
+  const [amountPaid, setAmountPaid] = useState('')
   const [date, setDate] = useState('')
   const [time, setTime] = useState('')
   const [saving, setSaving] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
 
   useEffect(() => {
     loadAppointments()
@@ -68,17 +194,50 @@ export default function Agendamentos() {
     setLoading(false)
   }
 
+  function patchLocal(id: number, patch: Partial<Appointment>) {
+    setAppointments((prev) => prev.map((x) => (x.id === id ? { ...x, ...patch } : x)))
+    setSelectedDay((prev) =>
+      prev
+        ? { ...prev, dayAppointments: prev.dayAppointments.map((x) => (x.id === id ? { ...x, ...patch } : x)) }
+        : prev
+    )
+  }
+
+  const formTotal = Number(totalValue) || 0
+  const formPaid = Number(amountPaid) || 0
+  const formRemaining = Math.max(formTotal - formPaid, 0)
+
   async function handleAddOrder(e: FormEvent) {
     e.preventDefault()
+    setFormError(null)
+
+    if (formPaid > formTotal) {
+      setFormError('O valor pago não pode ser maior que o total.')
+      return
+    }
+
     setSaving(true)
     try {
-      await api.post('/appointments', { client_name: clientName, description, date, time })
+      await api.post('/appointments', {
+        client_name: clientName,
+        description,
+        address: address.trim() || null,
+        total_value: formTotal,
+        amount_paid: formPaid,
+        date,
+        time,
+      })
       setClientName('')
       setDescription('')
+      setAddress('')
+      setTotalValue('')
+      setAmountPaid('')
       setDate('')
       setTime('')
       await loadAppointments()
       setView('list')
+    } catch (err: any) {
+      setFormError(err.response?.data?.message || 'Erro ao salvar o agendamento.')
     } finally {
       setSaving(false)
     }
@@ -86,13 +245,19 @@ export default function Agendamentos() {
 
   async function toggleStatus(a: Appointment) {
     const newStatus = a.status === 'pendente' ? 'concluido' : 'pendente'
-    setAppointments((prev) => prev.map((x) => (x.id === a.id ? { ...x, status: newStatus } : x)))
-    setSelectedDay((prev) =>
-      prev
-        ? { ...prev, dayAppointments: prev.dayAppointments.map((x) => (x.id === a.id ? { ...x, status: newStatus } : x)) }
-        : prev
-    )
+    patchLocal(a.id, { status: newStatus })
     await api.put(`/appointments/${a.id}`, { status: newStatus })
+  }
+
+  async function changePaid(a: Appointment, newPaid: number) {
+    const previous = a.amount_paid
+    patchLocal(a.id, { amount_paid: newPaid })
+    try {
+      await api.put(`/appointments/${a.id}`, { amount_paid: newPaid })
+    } catch {
+      patchLocal(a.id, { amount_paid: previous })
+      alert('Não foi possível salvar o pagamento.')
+    }
   }
 
   async function handleDelete(id: number) {
@@ -163,11 +328,83 @@ export default function Agendamentos() {
           <form onSubmit={handleAddOrder} className="space-y-3">
             <IconInput icon={User} label="Cliente" value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="Nome do cliente" required />
             <IconInput icon={AlignLeft} label="Pedido" as="textarea" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Ex: 20 pãezinhos recheados" required />
+            <IconInput icon={MapPin} label="Endereço" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Rua, número, bairro (opcional)" />
 
             <div className="grid grid-cols-2 gap-2">
               <IconInput icon={Calendar} label="Data" type="date" value={date} onChange={(e) => setDate(e.target.value)} required compact />
               <IconInput icon={Clock} label="Hora" type="time" value={time} onChange={(e) => setTime(e.target.value)} required compact />
             </div>
+
+            {/* Pagamento */}
+            <div className="bg-cream/20 p-3 rounded-xl border border-cream-dark space-y-2">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs font-semibold text-brown block mb-1">Valor total (R$)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={totalValue}
+                    onChange={(e) => setTotalValue(e.target.value)}
+                    placeholder="0,00"
+                    className={moneyInputClass}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-brown block mb-1">Já pagou (R$)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={amountPaid}
+                    onChange={(e) => setAmountPaid(e.target.value)}
+                    placeholder="0,00"
+                    className={moneyInputClass}
+                  />
+                </div>
+              </div>
+
+              {formTotal > 0 && (
+                <>
+                  <div className="flex gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setAmountPaid('')}
+                      className="flex-1 text-[11px] font-semibold border border-cream-dark rounded-lg py-1.5 text-brown-light hover:bg-cream transition"
+                    >
+                      Nada
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAmountPaid((formTotal / 2).toFixed(2))}
+                      className="flex-1 text-[11px] font-semibold border border-cream-dark rounded-lg py-1.5 text-brown-light hover:bg-cream transition"
+                    >
+                      50%
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAmountPaid(formTotal.toFixed(2))}
+                      className="flex-1 text-[11px] font-semibold border border-cream-dark rounded-lg py-1.5 text-brown-light hover:bg-cream transition"
+                    >
+                      Total
+                    </button>
+                  </div>
+                  <p className="text-[11px] px-1 text-brown-light">
+                    {formRemaining > 0 ? (
+                      <>Falta receber: <strong className="text-amber-700">{formatMoney(formRemaining)}</strong></>
+                    ) : (
+                      <strong className="text-sage">Pagamento completo</strong>
+                    )}
+                  </p>
+                </>
+              )}
+            </div>
+
+            {formError && (
+              <div className="bg-rose-50 border border-rose-200 text-rose-700 text-xs px-3 py-2 rounded-xl">
+                {formError}
+              </div>
+            )}
 
             <button
               type="submit"
@@ -250,20 +487,30 @@ export default function Agendamentos() {
                 </div>
               ) : (
                 sortedAppointments.map((a) => (
-                  <div key={a.id} className="bg-white p-4 rounded-2xl border border-cream-dark/70 flex flex-col sm:flex-row gap-3 sm:items-center">
-                    <DateBadge date={a.date} time={a.time} />
+                  <div key={a.id} className="bg-white p-4 rounded-2xl border border-cream-dark/70 space-y-3">
+                    <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
+                      <DateBadge date={a.date} time={a.time} />
 
-                    <div className="flex-1 min-w-0">
-                      <h3 className="text-sm font-semibold text-brown truncate">{a.client_name}</h3>
-                      <p className="text-xs text-brown-light">{a.description}</p>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-sm font-semibold text-brown truncate">{a.client_name}</h3>
+                        <p className="text-xs text-brown-light">{a.description}</p>
+                        {a.address && (
+                          <p className="text-xs text-brown-light mt-1 flex items-center gap-1">
+                            <MapPin size={12} className="shrink-0" />
+                            <span className="truncate">{a.address}</span>
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <StatusToggleButton status={a.status} onClick={() => toggleStatus(a)} />
+                        <button onClick={() => handleDelete(a.id)} className="text-red-500 p-1.5">
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
-                      <StatusToggleButton status={a.status} onClick={() => toggleStatus(a)} />
-                      <button onClick={() => handleDelete(a.id)} className="text-red-500 p-1.5">
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
+                    <PaymentControl a={a} onChangePaid={changePaid} />
                   </div>
                 ))
               )}
@@ -301,7 +548,18 @@ export default function Agendamentos() {
                       </button>
                     </div>
 
-                    <p className="text-sm text-brown-light mb-3">{a.description}</p>
+                    <p className="text-sm text-brown-light mb-2">{a.description}</p>
+
+                    {a.address && (
+                      <p className="text-xs text-brown-light mb-3 flex items-center gap-1">
+                        <MapPin size={12} className="shrink-0" />
+                        {a.address}
+                      </p>
+                    )}
+
+                    <div className="mb-3">
+                      <PaymentControl a={a} onChangePaid={changePaid} />
+                    </div>
 
                     <StatusToggleButton status={a.status} onClick={() => toggleStatus(a)} variant="block" />
                   </div>
