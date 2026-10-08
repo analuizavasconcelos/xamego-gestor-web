@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { api } from '../api/client'
 import { useProducts } from '../hooks/useProducts'
-import { NewProductModal } from '../components/NewProductModal'
-import { Plus, Pizza, PackageCheck } from 'lucide-react'
+import { NewProductModal, type EditableProduct } from '../components/NewProductModal'
+import { Plus, Pizza, PackageCheck, Pencil } from 'lucide-react'
 
 function formatMoney(value: number) {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -13,6 +13,7 @@ export default function Products() {
   const [restockId, setRestockId] = useState<number | null>(null)
   const [restockQty, setRestockQty] = useState('')
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [editingProduct, setEditingProduct] = useState<EditableProduct | null>(null)
 
   async function handleRestock(productId: number) {
     const qty = Number(restockQty)
@@ -21,6 +22,21 @@ export default function Products() {
     setRestockId(null)
     setRestockQty('')
     reload()
+  }
+
+  function openCreate() {
+    setEditingProduct(null)
+    setIsModalOpen(true)
+  }
+
+  function openEdit(p: EditableProduct) {
+    setEditingProduct(p)
+    setIsModalOpen(true)
+  }
+
+  function closeModal() {
+    setIsModalOpen(false)
+    setEditingProduct(null)
   }
 
   if (loading) return <p className="text-brown-light text-center py-10">Carregando estoque...</p>
@@ -33,7 +49,7 @@ export default function Products() {
           <p className="text-xs md:text-sm text-brown-light">Controle de unidades prontas para entrega</p>
         </div>
         <button
-          onClick={() => setIsModalOpen(true)}
+          onClick={openCreate}
           className="bg-terracotta hover:bg-terracotta-dark text-white text-sm font-bold px-4 py-2.5 rounded-xl flex items-center gap-1.5 shadow-sm transition"
         >
           <Plus size={18} />
@@ -78,7 +94,7 @@ export default function Products() {
                 </div>
               </div>
 
-              {/* Reposição */}
+              {/* Reposição e edição */}
               <div className="mt-3 pt-3 border-t border-cream-dark/60">
                 {restockId === p.id ? (
                   <div className="flex items-center gap-2">
@@ -105,13 +121,22 @@ export default function Products() {
                     </button>
                   </div>
                 ) : (
-                  <button
-                    onClick={() => setRestockId(p.id)}
-                    className="w-full text-center text-terracotta hover:text-terracotta-dark text-xs font-semibold py-1 transition flex items-center justify-center gap-1"
-                  >
-                    <PackageCheck size={14} />
-                    Repor estoque diário
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setRestockId(p.id)}
+                      className="flex-1 text-center text-terracotta hover:text-terracotta-dark text-xs font-semibold py-1 transition flex items-center justify-center gap-1"
+                    >
+                      <PackageCheck size={14} />
+                      Repor estoque diário
+                    </button>
+                    <button
+                      onClick={() => openEdit(p)}
+                      className="flex-1 text-center text-brown-light hover:text-brown text-xs font-semibold py-1 transition flex items-center justify-center gap-1"
+                    >
+                      <Pencil size={14} />
+                      Editar produto
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
@@ -119,11 +144,12 @@ export default function Products() {
         })}
       </div>
 
-      {/* Modal de novo produto */}
+      {/* Modal de novo produto / edição */}
       <NewProductModal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        onClose={closeModal}
         onCreated={reload}
+        product={editingProduct}
       />
     </div>
   )
