@@ -2,13 +2,26 @@ import { useState, useEffect, type FormEvent } from 'react'
 import { api } from '../api/client'
 import { X, Loader2, Image as ImageIcon } from 'lucide-react'
 
+export interface EditableProduct {
+  id: number
+  name: string
+  size: string
+  image_path: string | null
+  current_cost: number | string
+  current_price: number | string
+  low_stock_threshold: number
+}
+
 interface NewProductModalProps {
   isOpen: boolean
   onClose: () => void
   onCreated: () => void
+  product?: EditableProduct | null
 }
 
-export function NewProductModal({ isOpen, onClose, onCreated }: NewProductModalProps) {
+export function NewProductModal({ isOpen, onClose, onCreated, product }: NewProductModalProps) {
+  const isEditing = !!product
+
   const [name, setName] = useState('')
   const [size, setSize] = useState('')
   const [imagePath, setImagePath] = useState('')
@@ -18,6 +31,28 @@ export function NewProductModal({ isOpen, onClose, onCreated }: NewProductModalP
   const [minStock, setMinStock] = useState('5')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!isOpen) return
+    setError(null)
+    if (product) {
+      setName(product.name)
+      setSize(product.size)
+      setImagePath(product.image_path ?? '')
+      setCost(String(product.current_cost))
+      setPrice(String(product.current_price))
+      setMinStock(String(product.low_stock_threshold))
+      setStock('')
+    } else {
+      setName('')
+      setSize('')
+      setImagePath('')
+      setCost('')
+      setPrice('')
+      setStock('')
+      setMinStock('5')
+    }
+  }, [isOpen, product])
 
   // Fecha no Esc
   useEffect(() => {
@@ -32,7 +67,7 @@ export function NewProductModal({ isOpen, onClose, onCreated }: NewProductModalP
 
   if (!isOpen) return null
 
-  // Cálculo de margem 
+  // Cálculo de margem
   const numCost = Number(cost) || 0
   const numPrice = Number(price) || 0
   const profitMargin = numPrice > 0 ? (((numPrice - numCost) / numPrice) * 100).toFixed(0) : null
@@ -48,44 +83,62 @@ export function NewProductModal({ isOpen, onClose, onCreated }: NewProductModalP
 
     setSaving(true)
     try {
-      await api.post('/products', {
-        name: name.trim(),
-        size: size.trim(),
-        image_path: imagePath.trim() || null,
-        current_cost: Number(cost),
-        current_price: Number(price),
-        current_stock: Number(stock) || 0,
-        low_stock_threshold: Number(minStock) || 5,
-      })
+      if (isEditing && product) {
+        await api.put(`/products/${product.id}`, {
+          name: name.trim(),
+          size: size.trim(),
+          image_path: imagePath.trim() || null,
+          current_cost: Number(cost),
+          current_price: Number(price),
+          low_stock_threshold: Number(minStock) || 5,
+        })
+      } else {
+        await api.post('/products', {
+          name: name.trim(),
+          size: size.trim(),
+          image_path: imagePath.trim() || null,
+          current_cost: Number(cost),
+          current_price: Number(price),
+          current_stock: Number(stock) || 0,
+          low_stock_threshold: Number(minStock) || 5,
+        })
+      }
 
       onCreated()
       onClose()
     } catch (err: any) {
       console.error(err)
-      setError(err.response?.data?.message || 'Erro ao cadastrar produto.')
+      setError(
+        err.response?.data?.message ||
+          (isEditing ? 'Erro ao atualizar produto.' : 'Erro ao cadastrar produto.')
+      )
     } finally {
       setSaving(false)
     }
   }
 
   return (
-    <div 
+    <div
       className="fixed inset-0 bg-brown/20 backdrop-blur-sm flex items-end md:items-center justify-center p-0 md:p-4 z-50 animate-fade-in"
       onClick={onClose}
     >
-      <div 
+      <div
         className="bg-white rounded-t-3xl md:rounded-2xl p-6 w-full md:max-w-md shadow-xl border border-cream-dark space-y-4 max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Cabeçalho */}
         <div className="flex items-center justify-between border-b border-cream-dark pb-3">
           <div>
-            <h2 className="font-display text-lg font-bold text-brown">Novo Congelado</h2>
-            <p className="text-xs text-brown-light">Adicione uma nova opção ao catálogo</p>
+            <h2 className="font-display text-lg font-bold text-brown">
+              {isEditing ? 'Editar Congelado' : 'Novo Congelado'}
+            </h2>
+            <p className="text-xs text-brown-light">
+              {isEditing ? 'Altere preço, custo e demais dados' : 'Adicione uma nova opção ao catálogo'}
+            </p>
           </div>
-          <button 
+          <button
             type="button"
-            onClick={onClose} 
+            onClick={onClose}
             className="text-brown-light hover:text-brown p-1.5 rounded-lg hover:bg-cream transition-colors"
           >
             <X size={20} />
@@ -174,20 +227,22 @@ export function NewProductModal({ isOpen, onClose, onCreated }: NewProductModalP
 
           {/* Estoques */}
           <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="text-xs font-semibold text-brown block mb-1">
-                Estoque Inicial
-              </label>
-              <input
-                type="number"
-                min="0"
-                value={stock}
-                onChange={(e) => setStock(e.target.value)}
-                placeholder="0"
-                className="w-full bg-cream/30 border border-cream-dark rounded-xl h-10 px-3 text-sm text-brown focus:outline-none focus:ring-2 focus:ring-terracotta"
-              />
-            </div>
-            <div>
+            {!isEditing && (
+              <div>
+                <label className="text-xs font-semibold text-brown block mb-1">
+                  Estoque Inicial
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  value={stock}
+                  onChange={(e) => setStock(e.target.value)}
+                  placeholder="0"
+                  className="w-full bg-cream/30 border border-cream-dark rounded-xl h-10 px-3 text-sm text-brown focus:outline-none focus:ring-2 focus:ring-terracotta"
+                />
+              </div>
+            )}
+            <div className={isEditing ? 'col-span-2' : ''}>
               <label className="text-xs font-semibold text-brown block mb-1">
                 Alerta Estoque Mín.
               </label>
@@ -238,6 +293,8 @@ export function NewProductModal({ isOpen, onClose, onCreated }: NewProductModalP
                   <Loader2 size={16} className="animate-spin" />
                   Salvando...
                 </>
+              ) : isEditing ? (
+                'Salvar Alterações'
               ) : (
                 'Salvar Produto'
               )}
